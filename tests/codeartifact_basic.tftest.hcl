@@ -90,7 +90,7 @@ run "validate_repository_upstream" {
   }
 
   assert {
-    condition     = tolist(aws_codeartifact_repository.this["npm-proxy"].upstream)[0].repository_name == "npm-store"
+    condition     = tolist(aws_codeartifact_repository.with_upstreams["npm-proxy"].upstream)[0].repository_name == "npm-store"
     error_message = "Upstream repository_name should match the configured upstream"
   }
 }
@@ -111,6 +111,28 @@ run "validate_repository_external_connection" {
     condition     = tolist(aws_codeartifact_repository.this["npm-store"].external_connections)[0].external_connection_name == "public:npmjs"
     error_message = "External connection name should match the configured value"
   }
+}
+
+run "validate_upstream_chaining_rejected" {
+  command = plan
+
+  variables {
+    repositories = {
+      npm-store = {
+        description = "npm store repository"
+      }
+      npm-proxy = {
+        description = "npm proxy repository"
+        upstreams   = ["npm-store"]
+      }
+      npm-proxy-of-proxy = {
+        description = "invalid: chains through a repository that itself has upstreams"
+        upstreams   = ["npm-proxy"]
+      }
+    }
+  }
+
+  expect_failures = [var.repositories]
 }
 
 run "validate_multiple_repositories" {

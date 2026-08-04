@@ -56,6 +56,16 @@ variable "repositories" {
     tags                = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition = alltrue(flatten([
+      for name, repo in var.repositories : [
+        for upstream_name in repo.upstreams :
+        contains(keys(var.repositories), upstream_name) && length(var.repositories[upstream_name].upstreams) == 0
+      ]
+    ]))
+    error_message = "Each entry in a repository's 'upstreams' must reference another key in 'repositories' that itself has no upstreams. Only single-level repository chaining is supported."
+  }
 }
 
 variable "tags" {

@@ -57,7 +57,24 @@ resource "aws_codeartifact_domain" "this" {
 }
 
 resource "aws_codeartifact_repository" "this" {
-  for_each = var.repositories
+  for_each = local.repositories_without_upstreams
+
+  domain      = aws_codeartifact_domain.this.domain
+  repository  = each.key
+  description = each.value.description
+
+  dynamic "external_connections" {
+    for_each = each.value.external_connection != null ? [each.value.external_connection] : []
+    content {
+      external_connection_name = external_connections.value
+    }
+  }
+
+  tags = merge(local.common_tags, each.value.tags)
+}
+
+resource "aws_codeartifact_repository" "with_upstreams" {
+  for_each = local.repositories_with_upstreams
 
   domain      = aws_codeartifact_domain.this.domain
   repository  = each.key
@@ -66,7 +83,7 @@ resource "aws_codeartifact_repository" "this" {
   dynamic "upstream" {
     for_each = each.value.upstreams
     content {
-      repository_name = upstream.value
+      repository_name = aws_codeartifact_repository.this[upstream.value].repository
     }
   }
 
