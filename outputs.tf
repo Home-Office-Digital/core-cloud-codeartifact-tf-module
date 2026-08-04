@@ -25,10 +25,16 @@ output "kms_key_arn" {
 
 output "repository_arns" {
   description = "Map of repository name to repository ARN"
-  value       = { for k, v in aws_codeartifact_repository.this : k => v.arn }
+  value = merge(
+    { for k, v in aws_codeartifact_repository.this : k => v.arn },
+    { for k, v in aws_codeartifact_repository.with_upstreams : k => v.arn },
+  )
 }
 
 output "repository_admins" {
   description = "Map of repository name to the AWS account ID that administers the repository"
-  value       = { for k, v in aws_codeartifact_repository.this : k => v.administrator_account }
+  value = merge(
+    { for k, v in aws_codeartifact_repository.this : k => v.administrator_account },
+    { for k, v in aws_codeartifact_repository.with_upstreams : k => v.administrator_account },
+  )
 }

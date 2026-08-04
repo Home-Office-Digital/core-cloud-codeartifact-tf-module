@@ -20,4 +20,7 @@ locals {
   )
 
   kms_key_arn = local.create_kms_key ? aws_kms_key.codeartifact[0].arn : var.customer_managed_kms_key_arn
+
+  repositories_without_upstreams = { for k, v in var.repositories : k => v if length(v.upstreams) == 0 }
+  repositories_with_upstreams    = { for k, v in var.repositories : k => v if length(v.upstreams) > 0 }
 }
