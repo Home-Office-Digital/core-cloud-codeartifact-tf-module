@@ -96,3 +96,88 @@ resource "aws_codeartifact_repository" "with_upstreams" {
 
   tags = merge(local.common_tags, each.value.tags)
 }
+
+data "aws_organizations_organization" "current" {
+  count = local.needs_org_id ? 1 : 0
+}
+
+# Domain-level resource policy. Required for any principal outside the
+# domain's own account e.g. a cross-account GitHub OIDC role
+data "aws_iam_policy_document" "domain" {
+  count = length(var.domain_permissions_policy) > 0 ? 1 : 0
+
+  dynamic "statement" {
+    for_each = local.domain_policy_statements
+    content {
+      sid       = statement.value.sid
+      effect    = statement.value.effect
+      actions   = statement.value.actions
+      resources = [aws_codeartifact_domain.this.arn]
+
+      principals {
+        type        = "AWS"
+        identifiers = statement.value.principals
+      }
+
+      dynamic "condition" {
+        for_each = statement.value.conditions
+        content {
+          test     = condition.value.test
+          variable = condition.value.variable
+          values   = condition.value.values
+        }
+      }
+    }
+  }
+}
+
+resource "aws_codeartifact_domain_permissions_policy" "this" {
+  count = length(var.domain_permissions_policy) > 0 ? 1 : 0
+
+  domain          = aws_codeartifact_domain.this.domain
+  policy_document = data.aws_iam_policy_document.domain[0].json
+}
+
+# Repository-level resource policies. Required for any principal outside the
+# domain's own account to call repository-level actions like
+# ReadFromRepository, GetRepositoryEndpoint or PublishPackageVersion.
+data "aws_iam_policy_document" "repository" {
+  for_each = local.repository_policy_statements
+
+  dynamic "statement" {
+    for_each = each.value
+    content {
+      sid       = statement.value.sid
+      effect    = statement.value.effect
+      actions   = statement.value.actions
+      resources = [local.repository_arns[each.key]]
+
+      principals {
+        type        = "AWS"
+        identifiers = statement.value.principals
+      }
+
+      dynamic "condition" {
+        for_each = statement.value.conditions
+        content {
+          test     = condition.value.test
+          variable = condition.value.variable
+          values   = condition.value.values
+        }
+      }
+    }
+  }
+}
+
+resource "aws_codeartifact_repository_permissions_policy" "this" {
+  for_each = local.repository_policy_statements
+
+  domain          = aws_codeartifact_domain.this.domain
+  repository      = each.key
+  policy_document = data.aws_iam_policy_document.repository[each.key].json
+
+  depends_on = [
+    aws_codeartifact_repository.this,
+    aws_codeartifact_repository.with_upstreams,
+  ]
+}

@@ -25,10 +25,7 @@ output "kms_key_arn" {
 
 output "repository_arns" {
   description = "Map of repository name to repository ARN"
-  value = merge(
-    { for k, v in aws_codeartifact_repository.this : k => v.arn },
-    { for k, v in aws_codeartifact_repository.with_upstreams : k => v.arn },
-  )
+  value       = local.repository_arns
 }
 
 output "repository_admins" {
@@ -37,4 +34,14 @@ output "repository_admins" {
     { for k, v in aws_codeartifact_repository.this : k => v.administrator_account },
     { for k, v in aws_codeartifact_repository.with_upstreams : k => v.administrator_account },
   )
+}
+
+output "domain_permissions_policy_revision" {
+  description = "The current revision of the CodeArtifact domain permissions (resource-based) policy, if var.domain_permissions_policy is set"
+  value       = try(aws_codeartifact_domain_permissions_policy.this[0].policy_revision, null)
+}
+
+output "repository_permissions_policy_revisions" {
+  description = "Map of repository name to the current revision of its CodeArtifact repository permissions (resource-based) policy, for repositories configured via var.repository_permissions_policies"
+  value       = { for k, v in aws_codeartifact_repository_permissions_policy.this : k => v.policy_revision }
 }

@@ -44,6 +44,8 @@ Recommended settings:
 - Adhere to Core Cloud mandatory tags
 - Use a customer-managed KMS key (`kms_key_type = "CUSTOMER_MANAGED"`) where the domain requires auditable, account-scoped key control
 - Chain repositories via `upstreams` rather than duplicating external connections on every repository
+- If any consumer of the domain/repositories authenticates from a different AWS account (e.g. a cross-account GitHub OIDC role), set `domain_permissions_policy` (and the relevant entry in `repository_permissions_policies`) - an identity-based policy on the calling role alone is not enough for cross-account CodeArtifact access, AWS also requires a resource-based policy on the domain/repository itself
+- Prefer a `"*"` principal restricted by an `aws:PrincipalArn` `StringLike` condition (rather than an explicit account allowlist) when the consuming role name is deployed the same way across many/all accounts - it covers every current and future account automatically instead of needing a module update each time a new consumer account shows up. The module always pins `"*"` down to this AWS Organization via an auto-injected `aws:PrincipalOrgID` condition
 
 See the below example configuration (We recommend one file per environment containing all CodeArtifact resources using this module):
 
@@ -74,6 +76,40 @@ inputs = {
       upstreams            = ["npm-store"]
       external_connection = "public:npmjs"
     }
+  }
+
+  # Grants any account in this AWS Organization permission to authenticate
+  # against this domain, but only via a specific role name.
+  domain_permissions_policy = [
+    {
+      sid        = "AllowCrossAccountAuth"
+      principals = ["*"]
+      actions    = ["codeartifact:GetAuthorizationToken"]
+      conditions = [
+        {
+          test     = "StringLike"
+          variable = "aws:PrincipalArn"
+          values   = ["arn:aws:iam::*:role/cc-bootstrap-my-consumer-role"]
+        }
+      ]
+    }
+  ]
+
+  repository_permissions_policies = {
+    example-npm-store = [
+      {
+        sid        = "AllowCrossAccountPull"
+        principals = ["*"]
+        actions    = ["codeartifact:ReadFromRepository", "codeartifact:GetRepositoryEndpoint"]
+        conditions = [
+          {
+            test     = "StringLike"
+            variable = "aws:PrincipalArn"
+            values   = ["arn:aws:iam::*:role/cc-bootstrap-my-consumer-role"]
+          }
+        ]
+      }
+    ]
   }
 
   # Tags for all resources
@@ -114,9 +150,15 @@ No modules.
 |------|------|
 | [aws_codeartifact_domain.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codeartifact_domain) | resource |
 | [aws_codeartifact_repository.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codeartifact_repository) | resource |
+| [aws_codeartifact_repository.with_upstreams](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codeartifact_repository) | resource |
+| [aws_codeartifact_domain_permissions_policy.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codeartifact_domain_permissions_policy) | resource |
+| [aws_codeartifact_repository_permissions_policy.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codeartifact_repository_permissions_policy) | resource |
 | [aws_kms_key.codeartifact](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_kms_key_policy.codeartifact](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key_policy) | resource |
 | [aws_kms_alias.codeartifact](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
+| [aws_iam_policy_document.domain](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.repository](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_organizations_organization.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/organizations_organization) | data source |
 
 ## Inputs
 
@@ -131,6 +173,8 @@ No modules.
 | <a name="input_customer_managed_kms_key_arn"></a> [customer\_managed\_kms\_key\_arn](#input\_customer\_managed\_kms\_key\_arn) | ARN of an existing customer-managed KMS key to encrypt the domain. Only used when kms\_key\_type is 'CUSTOMER\_MANAGED'. If left null, the module creates its own KMS key. | `string` | `null` | no |
 | <a name="input_kms_alias"></a> [kms\_alias](#input\_kms\_alias) | KMS key alias suffix used when the module creates its own customer-managed KMS key (i.e. kms\_key\_type is 'CUSTOMER\_MANAGED' and customer\_managed\_kms\_key\_arn is null). The 'alias/' prefix is added automatically. | `string` | `"codeartifact"` | no |
 | <a name="input_repositories"></a> [repositories](#input\_repositories) | Map of CodeArtifact repositories to create in the domain, keyed by repository name | <pre>map(object({<br/>    description         = optional(string)<br/>    upstreams           = optional(list(string), [])<br/>    external_connection = optional(string)<br/>    tags                = optional(map(string), {})<br/>  }))</pre> | `{}` | no |
+| <a name="input_domain_permissions_policy"></a> [domain\_permissions\_policy](#input\_domain\_permissions\_policy) | Resource-based policy statements attached to the CodeArtifact domain, granting other principals (e.g. cross-account IAM roles) domain-level actions such as GetAuthorizationToken. Required for any principal outside the domain's own account to authenticate against it. | <pre>list(object({<br/>    sid        = optional(string)<br/>    effect     = optional(string, "Allow")<br/>    principals = list(string)<br/>    actions    = list(string)<br/>    conditions = optional(list(object({<br/>      test     = string<br/>      variable = string<br/>      values   = list(string)<br/>    })), [])<br/>  }))</pre> | `[]` | no |
+| <a name="input_repository_permissions_policies"></a> [repository\_permissions\_policies](#input\_repository\_permissions\_policies) | Resource-based policy statements per repository, granting other principals (e.g. cross-account IAM roles) repository-level actions such as ReadFromRepository, GetRepositoryEndpoint or PublishPackageVersion. Keyed by repository name, which must match a key in var.repositories. | <pre>map(list(object({<br/>    sid        = optional(string)<br/>    effect     = optional(string, "Allow")<br/>    principals = list(string)<br/>    actions    = list(string)<br/>    conditions = optional(list(object({<br/>      test     = string<br/>      variable = string<br/>      values   = list(string)<br/>    })), [])<br/>  })))</pre> | `{}` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to be applied to all resources. Must include Environment, Project, cost-centre, account-code, portfolio-id, project-id and service-id | `map(string)` | `{}` | no |
 
 ## Outputs
@@ -144,4 +188,6 @@ No modules.
 | <a name="output_kms_key_arn"></a> [kms\_key\_arn](#output\_kms\_key\_arn) | The ARN of the customer-managed KMS key used by the domain, if any |
 | <a name="output_repository_arns"></a> [repository\_arns](#output\_repository\_arns) | Map of repository name to repository ARN |
 | <a name="output_repository_admins"></a> [repository\_admins](#output\_repository\_admins) | Map of repository name to the AWS account ID that administers the repository |
+| <a name="output_domain_permissions_policy_revision"></a> [domain\_permissions\_policy\_revision](#output\_domain\_permissions\_policy\_revision) | The current revision of the CodeArtifact domain permissions (resource-based) policy, if var.domain\_permissions\_policy is set |
+| <a name="output_repository_permissions_policy_revisions"></a> [repository\_permissions\_policy\_revisions](#output\_repository\_permissions\_policy\_revisions) | Map of repository name to the current revision of its CodeArtifact repository permissions (resource-based) policy, for repositories configured via var.repository\_permissions\_policies |
 

@@ -8,5 +8,8 @@ eg:
 
 ### [1.0.1] 2026-08-04
 
-  * Fixed `aws_codeartifact_repository` creation ordering: repositories that declare `upstreams` are now created in a separate resource from the repositories they reference, so Terraform can build a real dependency edge instead of relying on a plain string match. Previously the first `apply` after adding an upstream reference could fail because the referenced repository didn't exist yet, requiring a second `apply` to succeed.
-  * Added a validation on `repositories` requiring that `upstreams` entries reference a repository with no upstreams of its own (single-level chaining only).
+  * Upstream repos must be created before associations are made
+
+### [1.1.0] 2026-08-07
+
+  * Adds cross-account policy support. Required for platform-shared CodeArtifact repos
