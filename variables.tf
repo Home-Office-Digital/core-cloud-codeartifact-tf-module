@@ -68,6 +68,57 @@ variable "repositories" {
   }
 }
 
+variable "domain_permissions_policy" {
+  description = "Resource-based policy statements attached to the CodeArtifact domain"
+  type = list(object({
+    sid        = optional(string)
+    effect     = optional(string, "Allow")
+    principals = list(string) # AWS principal ARNs or account IDs, e.g. "arn:aws:iam::123456789012:root" or a specific role ARN
+    actions    = list(string)
+    conditions = optional(list(object({
+      test     = string
+      variable = string
+      values   = list(string)
+    })), [])
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for statement in var.domain_permissions_policy : contains(["Allow", "Deny"], statement.effect)])
+    error_message = "Each domain_permissions_policy statement's effect must be either 'Allow' or 'Deny'."
+  }
+}
+
+variable "repository_permissions_policies" {
+  description = "Resource-based policy statements per repository, granting other principals (e.g. cross-account IAM roles) repository-level actions such as ReadFromRepository, GetRepositoryEndpoint or PublishPackageVersion. Keyed by repository name, which must match a key in var.repositories."
+  type = map(list(object({
+    sid        = optional(string)
+    effect     = optional(string, "Allow")
+    principals = list(string) # AWS principal ARNs or account IDs, e.g. "arn:aws:iam::123456789012:root" or a specific role ARN
+    actions    = list(string)
+    conditions = optional(list(object({
+      test     = string
+      variable = string
+      values   = list(string)
+    })), [])
+  })))
+  default = {}
+
+  # Note: this repo's CI pins Terraform 1.7.0 for `terraform validate`, which predates
+  # support for cross-variable references in validation blocks (added in 1.9), so a
+  # key not present in var.repositories can't be caught here - it'll instead surface
+  # as an apply-time "repository not found" error from AWS.
+
+  validation {
+    condition = alltrue(flatten([
+      for statements in values(var.repository_permissions_policies) : [
+        for statement in statements : contains(["Allow", "Deny"], statement.effect)
+      ]
+    ]))
+    error_message = "Each repository_permissions_policies statement's effect must be either 'Allow' or 'Deny'."
+  }
+}
+
 variable "tags" {
   description = "Tags to be applied to all resources"
   type        = map(string)
