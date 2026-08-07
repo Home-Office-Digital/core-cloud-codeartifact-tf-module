@@ -13,3 +13,7 @@ eg:
 ### [1.1.0] 2026-08-07
 
   * Adds cross-account policy support. Required for platform-shared CodeArtifact repos
+
+### [1.1.1] 2026-08-07
+
+  * Added package-scoped actions to policy permissions as well as the repo ARN

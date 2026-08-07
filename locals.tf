@@ -29,6 +29,8 @@ locals {
     { for k, v in aws_codeartifact_repository.with_upstreams : k => v.arn },
   )
 
+  repository_package_arns = { for k, v in local.repository_arns : k => format("%s/*", replace(v, ":repository/", ":package/")) }
+
   # A "*" principal is only ever safe when it's also pinned to this AWS Organization. Rather than trust every caller it's not possible to end up with a truly public policy (by design)
   # through this module (which is what we want).
   domain_policy_needs_org_id = anytrue([for s in var.domain_permissions_policy : contains(s.principals, "*")])
