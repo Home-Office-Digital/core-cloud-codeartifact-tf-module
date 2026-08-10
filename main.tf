@@ -147,10 +147,13 @@ data "aws_iam_policy_document" "repository" {
   dynamic "statement" {
     for_each = each.value
     content {
-      sid       = statement.value.sid
-      effect    = statement.value.effect
-      actions   = statement.value.actions
-      resources = [local.repository_arns[each.key]]
+      sid     = statement.value.sid
+      effect  = statement.value.effect
+      actions = statement.value.actions
+      resources = [
+        local.repository_arns[each.key],
+        local.repository_package_arns[each.key],
+      ]
 
       principals {
         type        = "AWS"
